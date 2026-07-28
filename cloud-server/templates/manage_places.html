@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Manage Places{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h2>Geofenced Places</h2>
+        <div>
+            <a href="{{ url_for('family_page') }}" class="btn btn-sm btn-outline">Dashboard</a>
+            <a href="{{ url_for('family_settings') }}" class="btn btn-sm btn-outline">Settings</a>
+        </div>
+    </div>
+    <div id="map" style="height:400px;border-radius:8px;margin-bottom:16px;"></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <input type="text" id="placeName" placeholder="Place name (e.g. Home, Office)" style="flex:1;min-width:150px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;">
+        <input type="number" id="placeRadius" value="100" min="20" max="1000" style="width:100px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;" title="Radius in meters">
+        <button class="btn btn-primary" id="addPlaceBtn" disabled onclick="savePlace()">Add Place</button>
+    </div>
+    <p style="font-size:0.85rem;color:#888;">Click on the map to set the location, then enter a name and save.</p>
+    <div id="placesList"></div>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map, marker, places = [];
+let pendingLat = null, pendingLng = null;
+
+async function loadPlaces() {
+    const resp = await fetch('/api/places');
+    const data = await resp.json();
+    places = data.places;
+    renderPlaces();
+}
+
+function renderPlaces() {
+    const container = document.getElementById('placesList');
+    if (places.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="icon">📍</div><h3>No places yet</h3><p>Add your home, office, and other important locations</p></div>';
+        return;
+    }
+    let html = '<table class="file-list"><thead><tr><th>Name</th><th>Latitude</th><th>Longitude</th><th>Radius</th><th>Actions</th></tr></thead><tbody>';
+    for (const p of places) {
+        html += `<tr>
+            <td><strong>${p.name}</strong></td>
+            <td>${p.latitude.toFixed(4)}</td>
+            <td>${p.longitude.toFixed(4)}</td>
+            <td>${p.radius_meters}m</td>
+            <td><button class="btn btn-sm btn-danger" onclick="deletePlace(${p.id})">Delete</button></td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    updateMapMarkers();
+}
+
+function updateMapMarkers() {
+    if (!map) return;
+    map.eachLayer(l => { if (l._isPlaceMarker) map.removeLayer(l); });
+    for (const p of places) {
+        const circle = L.circle([p.latitude, p.longitude], {
+            radius: p.radius_meters,
+            color: '#4a4ae0',
+            fillColor: '#4a4ae0',
+            fillOpacity: 0.15,
+            weight: 2
+        }).addTo(map);
+        circle._isPlaceMarker = true;
+        circle.bindTooltip(p.name, {permanent: true, direction: 'center', className: 'place-label'});
+    }
+}
+
+async function savePlace() {
+    const name = document.getElementById('placeName').value.trim();
+    const radius = parseInt(document.getElementById('placeRadius').value) || 100;
+    if (!name || pendingLat === null) return;
+    const resp = await fetch('/api/places', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, latitude: pendingLat, longitude: pendingLng, radius_meters: radius})
+    });
+    if (resp.ok) {
+        document.getElementById('placeName').value = '';
+        document.getElementById('addPlaceBtn').disabled = true;
+        pendingLat = null;
+        pendingLng = null;
+        if (marker) { map.removeLayer(marker); marker = null; }
+        loadPlaces();
+    } else {
+        const data = await resp.json();
+        alert(data.error);
+    }
+}
+
+async function deletePlace(id) {
+    if (!confirm('Delete this place?')) return;
+    await fetch('/api/places/' + id, {method: 'DELETE'});
+    loadPlaces();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    map = L.map('map').setView([20, 78], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 18
+    }).addTo(map);
+
+    map.on('click', function(e) {
+        pendingLat = e.latlng.lat;
+        pendingLng = e.latlng.lng;
+        if (marker) map.removeLayer(marker);
+        marker = L.marker(e.latlng, {draggable: true}).addTo(map);
+        marker.on('dragend', function() {
+            pendingLat = marker.getLatLng().lat;
+            pendingLng = marker.getLatLng().lng;
+        });
+        document.getElementById('addPlaceBtn').disabled = false;
+    });
+
+    loadPlaces();
+});
+</script>
+<style>
+.place-label { background: #4a4ae0 !important; color: #fff !important; border: none !important; font-size: 13px !important; font-weight: 600 !important; padding: 4px 10px !important; white-space: nowrap; }
+.place-label:before { border-top-color: #4a4ae0 !important; }
+</style>
+{% endblock %}

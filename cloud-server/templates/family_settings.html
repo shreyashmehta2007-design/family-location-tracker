@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Family Settings{% endblock %}
+{% block content %}
+{% if member %}
+<div class="card">
+    <h2>{{ member.family_name }}</h2>
+    <p style="color:#666;margin:8px 0;">Invite Code: <strong style="font-size:1.2rem;letter-spacing:2px;color:#4a4ae0;">{{ member.invite_code }}</strong></p>
+    <p style="font-size:0.85rem;color:#888;">Share this code with family members to join</p>
+    <h3 style="margin-top:24px;">Members</h3>
+    <table class="file-list">
+        <thead><tr><th>Name</th><th>Role</th><th>Nickname</th></tr></thead>
+        <tbody>
+        {% for m in members %}
+        <tr><td>{{ m.username }}</td><td>{{ m.role }}</td><td>{{ m.nickname or '-' }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <div style="margin-top:16px;">
+        <a href="{{ url_for('family_page') }}" class="btn btn-primary">Dashboard</a>
+        <a href="{{ url_for('family_places_page') }}" class="btn btn-outline">Manage Places</a>
+        <button class="btn btn-danger btn-sm" style="margin-left:8px;" onclick="if(confirm('Leave family?')){fetch('/api/family/leave',{method:'POST'}).then(r=>location.href='/family');}">Leave Family</button>
+    </div>
+</div>
+{% else %}
+<div class="auth-page" style="flex-direction:column;gap:24px;">
+    <div class="auth-card">
+        <h2>Create a Family</h2>
+        <form id="createForm" onsubmit="return createFamily(event)">
+            <div class="form-group">
+                <label>Family Name</label>
+                <input type="text" id="familyName" placeholder="e.g. Smith Family" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Create Family</button>
+        </form>
+    </div>
+    <div class="auth-card">
+        <h2>Join a Family</h2>
+        <form id="joinForm" onsubmit="return joinFamily(event)">
+            <div class="form-group">
+                <label>Invite Code</label>
+                <input type="text" id="inviteCode" placeholder="e.g. ABC123" required style="text-transform:uppercase;letter-spacing:2px;">
+            </div>
+            <button type="submit" class="btn btn-primary">Join Family</button>
+        </form>
+    </div>
+</div>
+<script>
+async function createFamily(e) {
+    e.preventDefault();
+    const name = document.getElementById('familyName').value.trim();
+    if (!name) return false;
+    const resp = await fetch('/api/family/create', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name})
+    });
+    const data = await resp.json();
+    if (resp.ok) location.reload();
+    else alert(data.error);
+    return false;
+}
+async function joinFamily(e) {
+    e.preventDefault();
+    const code = document.getElementById('inviteCode').value.trim();
+    if (!code) return false;
+    const resp = await fetch('/api/family/join', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({invite_code: code})
+    });
+    const data = await resp.json();
+    if (resp.ok) location.reload();
+    else alert(data.error);
+    return false;
+}
+</script>
+{% endif %}
+{% endblock %}

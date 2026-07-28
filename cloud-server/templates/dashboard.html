@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}My Files{% endblock %}
+{% block content %}
+<div class="card">
+    <div style="margin-bottom: 16px;">
+        <strong>Storage: </strong>{{ format_size(used) }} / {{ format_size(quota) }}
+        <div class="storage-bar">
+            <div class="storage-bar-fill {% if pct > 85 %}danger{% elif pct > 70 %}warning{% endif %}" style="width: {{ pct }}%"></div>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline">Root</a>
+        {% if current_path %}
+            {% for crumb in breadcrumbs %}
+                <span style="color: #888;">/</span>
+                <a href="{{ url_for('dashboard', path=crumb.id) }}" class="btn btn-sm btn-outline">{{ crumb.name }}</a>
+            {% endfor %}
+        {% endif %}
+        <div style="flex:1;"></div>
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('folderModal').classList.add('active')">+ Folder</button>
+        <button class="btn btn-sm btn-primary" onclick="document.getElementById('uploadInput').click()">Upload</button>
+        <button id="deleteBtn" class="btn btn-sm btn-danger" onclick="deleteSelected()">Delete</button>
+    </div>
+
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('uploadInput').click()">
+        <div class="icon">&#128228;</div>
+        <p>Drag & drop files here or click to upload</p>
+    </div>
+
+    <form id="uploadForm" style="display:none;">
+        <input type="file" id="uploadInput" name="files" multiple onchange="uploadFiles(this.files)">
+        <input type="hidden" name="parent_id" value="{{ current_path or '' }}">
+    </form>
+
+    <div class="upload-progress" id="uploadProgress">
+        {% for i in range(5) %}<div class="file-progress" style="margin-bottom:8px;">
+            <div style="font-size:0.85rem;margin-bottom:4px;"><span class="progress-name"></span> <span class="progress-status"></span></div>
+            <div class="progress-track"><div class="progress-fill"></div></div>
+        </div>{% endfor %}
+    </div>
+
+    {% if files %}
+    <table class="file-list">
+        <thead>
+            <tr>
+                <th class="checkbox-col"><input type="checkbox" onchange="toggleAll(this)" style="cursor:pointer;"></th>
+                <th>Name</th>
+                <th>Size</th>
+                <th>Date</th>
+                <th class="actions-col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for file in files %}
+            <tr>
+                <td><input type="checkbox" value="{{ file.id }}" onchange="updateDeleteBtn()" style="cursor:pointer;"></td>
+                <td>
+                    <div class="name-col">
+                        <span class="icon">{% if file.is_folder %}&#128193;{% else %}&#128196;{% endif %}</span>
+                        {% if file.is_folder %}
+                            <a href="{{ url_for('dashboard', path=file.id) }}">{{ file.original_name }}</a>
+                        {% else %}
+                            <span>{{ file.original_name }}</span>
+                        {% endif %}
+                    </div>
+                </td>
+                <td>{{ format_size(file.size) if not file.is_folder else '-' }}</td>
+                <td>{{ file.created_at[:10] }}</td>
+                <td class="actions-col">
+                    {% if not file.is_folder %}
+                        <a href="{{ url_for('download', file_id=file.id) }}" title="Download">&#10515;</a>
+                        <button class="btn-icon" onclick="shareFile({{ file.id }})" title="Share">&#128279;</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="icon">&#128193;</div>
+        <h3>No files yet</h3>
+        <p>Upload your first file to get started</p>
+    </div>
+    {% endif %}
+</div>
+
+<div class="modal" id="folderModal">
+    <div class="modal-content">
+        <h3>New Folder</h3>
+        <div class="form-group">
+            <label>Folder name</label>
+            <input type="text" id="folderName" placeholder="My Folder" onkeydown="if(event.key==='Enter') createFolder()">
+        </div>
+        <button class="btn btn-primary" onclick="createFolder()">Create</button>
+        <button class="btn btn-outline" style="margin-left:8px;" onclick="document.getElementById('folderModal').classList.remove('active')">Cancel</button>
+    </div>
+</div>
+
+<div class="modal" id="shareModal">
+    <div class="modal-content">
+        <h3>Share Link</h3>
+        <input type="text" class="share-link-input" id="shareLink" readonly onclick="this.select();navigator.clipboard.writeText(this.value)">
+        <p style="font-size:0.85rem;color:#888;">Link expires in 7 days. Click to copy.</p>
+        <button class="btn btn-outline" onclick="document.getElementById('shareModal').classList.remove('active')">Close</button>
+    </div>
+</div>
+
+<script>
+let selectedFiles = [];
+
+function toggleAll(master) {
+    document.querySelectorAll('.file-list tbody input[type=checkbox]').forEach(cb => cb.checked = master.checked);
+    updateDeleteBtn();
+}
+
+function updateDeleteBtn() {
+    const checked = document.querySelectorAll('.file-list tbody input[type=checkbox]:checked');
+    const btn = document.getElementById('deleteBtn');
+    if (checked.length > 0) {
+        btn.classList.add('visible');
+        btn.textContent = 'Delete (' + checked.length + ')';
+    } else {
+        btn.classList.remove('visible');
+    }
+}
+
+async function deleteSelected() {
+    if (!confirm('Delete selected files/folders?')) return;
+    const checked = document.querySelectorAll('.file-list tbody input[type=checkbox]:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    const resp = await fetch('/delete', { method: 'POST', body: JSON.stringify({ file_ids: ids }), headers: {'Content-Type': 'application/json'} });
+    if (resp.ok) location.reload();
+}
+
+const dropzone = document.getElementById('dropzone');
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('dragover'); uploadFiles(e.dataTransfer.files); });
+
+function uploadFiles(files) {
+    if (!files.length) return;
+    const formData = new FormData();
+    const parentId = document.querySelector('input[name=parent_id]').value;
+    for (const f of files) formData.append('files', f);
+    formData.append('parent_id', parentId);
+
+    const progress = document.getElementById('uploadProgress');
+    progress.classList.add('active');
+    const bars = progress.querySelectorAll('.file-progress');
+
+    for (let i = 0; i < bars.length; i++) {
+        if (i < files.length) {
+            bars[i].style.display = 'block';
+            bars[i].querySelector('.progress-name').textContent = files[i].name;
+            bars[i].querySelector('.progress-status').textContent = 'uploading...';
+        } else {
+            bars[i].style.display = 'none';
+        }
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable && bars.length > 0) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            bars[0].querySelector('.progress-fill').style.width = pct + '%';
+        }
+    };
+    xhr.onload = function() {
+        if (xhr.status === 200) location.reload();
+    };
+    xhr.open('POST', '/upload');
+    xhr.send(formData);
+}
+
+async function createFolder() {
+    const name = document.getElementById('folderName').value.trim();
+    if (!name) return alert('Enter a folder name');
+    const parentId = '{{ current_path }}';
+    const resp = await fetch('/mkdir', {
+        method: 'POST',
+        body: JSON.stringify({ name, parent_id: parentId === 'None' ? null : parseInt(parentId) }),
+        headers: {'Content-Type': 'application/json'}
+    });
+    const data = await resp.json();
+    if (resp.ok) location.reload();
+    else alert(data.error);
+}
+
+async function shareFile(fileId) {
+    const resp = await fetch('/share/' + fileId, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+    const data = await resp.json();
+    if (resp.ok) {
+        document.getElementById('shareLink').value = data.url;
+        document.getElementById('shareModal').classList.add('active');
+    }
+}
+</script>
+{% endblock %}

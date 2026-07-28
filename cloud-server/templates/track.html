@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Location Tracking{% endblock %}
+{% block content %}
+<div class="card" style="text-align:center;">
+    <h2>📍 Location Tracking</h2>
+    <p style="color:#666;margin:16px 0;">Keep this page open on your phone to share your location with your family.</p>
+    <div id="status" style="padding:20px;border-radius:8px;margin:16px 0;">
+        <div style="font-size:2rem;margin-bottom:8px;">⏳</div>
+        <div style="font-size:1.1rem;">Initializing GPS...</div>
+    </div>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
+        <div class="stat-box">
+            <div class="stat-label">Latitude</div>
+            <div class="stat-value" id="latDisplay">-</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Longitude</div>
+            <div class="stat-value" id="lngDisplay">-</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Accuracy</div>
+            <div class="stat-value" id="accDisplay">-</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Updates Sent</div>
+            <div class="stat-value" id="countDisplay">0</div>
+        </div>
+    </div>
+    <div style="margin-top:16px;">
+        <button class="btn btn-danger" id="stopBtn" style="display:none;" onclick="stopTracking()">Stop Tracking</button>
+        <button class="btn btn-primary" id="startBtn" onclick="startTracking()">Start Tracking</button>
+    </div>
+</div>
+
+<script>
+let watchId = null;
+let sentCount = 0;
+let isTracking = false;
+
+function startTracking() {
+    if (!navigator.geolocation) {
+        document.getElementById('status').innerHTML = '<div style="color:#e74c3c;">GPS not supported on this device</div>';
+        return;
+    }
+    document.getElementById('startBtn').style.display = 'none';
+    document.getElementById('stopBtn').style.display = 'inline-block';
+    isTracking = true;
+    updateStatus('Requesting GPS permission...', '#f39c12');
+
+    watchId = navigator.geolocation.watchPosition(
+        function(pos) {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            const acc = pos.coords.accuracy;
+            document.getElementById('latDisplay').textContent = lat.toFixed(6);
+            document.getElementById('lngDisplay').textContent = lng.toFixed(6);
+            document.getElementById('accDisplay').textContent = acc.toFixed(0) + 'm';
+            updateStatus('Tracking active', '#27ae60');
+            sendLocation(lat, lng, acc);
+        },
+        function(err) {
+            const msgs = {
+                1: 'Permission denied - allow location access',
+                2: 'GPS unavailable',
+                3: 'GPS timed out'
+            };
+            updateStatus(msgs[err.code] || 'GPS error', '#e74c3c');
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+    );
+}
+
+function stopTracking() {
+    if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+    }
+    isTracking = false;
+    document.getElementById('startBtn').style.display = 'inline-block';
+    document.getElementById('stopBtn').style.display = 'none';
+    updateStatus('Tracking stopped', '#888');
+}
+
+async function sendLocation(lat, lng, acc) {
+    try {
+        await fetch('/api/location', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({latitude: lat, longitude: lng, accuracy: acc})
+        });
+        sentCount++;
+        document.getElementById('countDisplay').textContent = sentCount;
+    } catch(e) {
+        console.error('Failed to send location');
+    }
+}
+
+function updateStatus(msg, color) {
+    document.getElementById('status').innerHTML = `
+        <div style="font-size:2rem;margin-bottom:8px;">${color === '#27ae60' ? '✅' : color === '#f39c12' ? '⏳' : '❌'}</div>
+        <div style="font-size:1.1rem;color:${color};">${msg}</div>
+    `;
+}
+
+window.addEventListener('beforeunload', function() {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+});
+</script>
+
+<style>
+.stat-box { background: #f8f9ff; border-radius:8px; padding:16px 24px; min-width:120px; }
+.stat-label { font-size:0.8rem; color:#888; margin-bottom:4px; }
+.stat-value { font-size:1.2rem; font-weight:600; color:#1a1a2e; font-family: monospace; }
+</style>
+{% endblock %}

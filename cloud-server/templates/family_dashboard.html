@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Family Tracker{% endblock %}
+{% block content %}
+<div style="display:flex;gap:20px;flex-wrap:wrap;">
+    <div style="flex:2;min-width:500px;">
+        <div class="card" style="padding:0;overflow:hidden;">
+            <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eee;">
+                <h2 style="font-size:1.2rem;">{{ member.family_name }}</h2>
+                <div style="display:flex;gap:8px;">
+                    <a href="{{ url_for('track_page') }}" class="btn btn-sm btn-primary" target="_blank">📱 Start Tracking</a>
+                    <a href="{{ url_for('family_places_page') }}" class="btn btn-sm btn-outline">Places</a>
+                    <a href="{{ url_for('family_settings') }}" class="btn btn-sm btn-outline">Settings</a>
+                </div>
+            </div>
+            <div id="map" style="height:500px;"></div>
+        </div>
+    </div>
+    <div style="flex:1;min-width:280px;">
+        <div class="card" style="margin-bottom:16px;">
+            <h3 style="font-size:1rem;margin-bottom:12px;">👨‍👩‍👧‍👦 Family Members</h3>
+            <div id="membersList">
+                <p style="color:#888;">Loading...</p>
+            </div>
+        </div>
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h3 style="font-size:1rem;">🔔 Recent Alerts</h3>
+                <button class="btn btn-sm btn-outline" onclick="loadEvents()" title="Refresh">↻</button>
+            </div>
+            <div id="eventsList">
+                <p style="color:#888;">No alerts yet</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map, memberMarkers = {}, placeCircles = [], refreshInterval;
+
+function initMap() {
+    map = L.map('map').setView([20, 78], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 18
+    }).addTo(map);
+    loadData();
+    refreshInterval = setInterval(loadData, 15000);
+}
+
+async function loadData() {
+    await Promise.all([loadLocations(), loadPlaces(), loadEvents()]);
+}
+
+async function loadLocations() {
+    const resp = await fetch('/api/locations');
+    const data = await resp.json();
+    const container = document.getElementById('membersList');
+    let bounds = [];
+
+    for (const key in memberMarkers) {
+        map.removeLayer(memberMarkers[key]);
+    }
+    memberMarkers = {};
+
+    if (data.locations.length === 0) {
+        container.innerHTML = '<p style="color:#888;">No family members yet</p>';
+        return;
+    }
+
+    let html = '';
+    for (const loc of data.locations) {
+        const name = loc.nickname || loc.username;
+        const color = loc.online ? '#27ae60' : '#888';
+        const status = loc.online ? '🟢 Online' : '⚪ Offline';
+
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;">
+            <div><strong>${name}</strong><br><span style="font-size:0.8rem;color:${color};">${status}</span></div>
+            <span style="font-size:0.85rem;color:#888;">${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}</span>
+        </div>`;
+
+        const icon = L.divIcon({
+            html: `<div style="background:${color};color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">${name.charAt(0).toUpperCase()}</div>`,
+            className: '',
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
+        });
+
+        const marker = L.marker([loc.latitude, loc.longitude], {icon}).addTo(map);
+        marker.bindTooltip(name, {direction: 'top', offset: [0, -16]});
+        memberMarkers[loc.user_id] = marker;
+        bounds.push([loc.latitude, loc.longitude]);
+    }
+    container.innerHTML = html;
+
+    if (bounds.length > 0) {
+        if (bounds.length === 1) {
+            map.setView(bounds[0], 14);
+        } else {
+            map.fitBounds(bounds, {padding: [50, 50]});
+        }
+    }
+}
+
+async function loadPlaces() {
+    for (const c of placeCircles) map.removeLayer(c);
+    placeCircles = [];
+    const resp = await fetch('/api/places');
+    const data = await resp.json();
+    for (const p of data.places) {
+        const circle = L.circle([p.latitude, p.longitude], {
+            radius: p.radius_meters,
+            color: '#e74c3c',
+            fillColor: '#e74c3c',
+            fillOpacity: 0.1,
+            weight: 2,
+            dashArray: '5,5'
+        }).addTo(map);
+        circle.bindTooltip(p.name, {permanent: true, direction: 'center', className: 'place-label'});
+        placeCircles.push(circle);
+    }
+}
+
+async function loadEvents() {
+    const resp = await fetch('/api/events');
+    const data = await resp.json();
+    const container = document.getElementById('eventsList');
+    if (data.events.length === 0) {
+        container.innerHTML = '<p style="color:#888;">No alerts yet</p>';
+        return;
+    }
+    let html = '';
+    for (const e of data.events) {
+        const icon = e.event_type === 'enter' ? '🟢' : '🔴';
+        const time = e.created_at ? e.created_at.substring(11, 19) : '';
+        html += `<div style="padding:10px 0;border-bottom:1px solid #f5f5f5;font-size:0.9rem;">
+            <div>${icon} <strong>${e.message}</strong></div>
+            <div style="font-size:0.8rem;color:#888;margin-top:4px;">${time}</div>
+        </div>`;
+    }
+    container.innerHTML = html;
+}
+
+document.addEventListener('DOMContentLoaded', initMap);
+window.addEventListener('beforeunload', function() { clearInterval(refreshInterval); });
+</script>
+<style>
+.place-label { background: #e74c3c !important; color: #fff !important; border: none !important; font-size: 13px !important; font-weight: 600 !important; padding: 4px 10px !important; white-space: nowrap; }
+.place-label:before { border-top-color: #e74c3c !important; }
+</style>
+{% endblock %}

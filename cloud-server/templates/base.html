@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Cloud Storage{% endblock %}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { background: #1a1a2e; padding: 16px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .header .container { display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { color: #fff; font-size: 1.4rem; }
+        .header h1 a { color: #fff; text-decoration: none; }
+        .header .user-info { color: #a0a0b8; font-size: 0.9rem; }
+        .header .user-info a { color: #7c7cf0; text-decoration: none; margin-left: 12px; }
+        .header .user-info a:hover { text-decoration: underline; }
+        .btn { display: inline-block; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; text-decoration: none; transition: all 0.2s; }
+        .btn-primary { background: #4a4ae0; color: #fff; }
+        .btn-primary:hover { background: #3a3ac8; }
+        .btn-danger { background: #e74c3c; color: #fff; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+        .btn-outline { background: transparent; border: 1px solid #ddd; color: #555; }
+        .btn-outline:hover { background: #f5f5f5; }
+        .flash { padding: 12px 20px; border-radius: 6px; margin-bottom: 16px; font-size: 0.9rem; }
+        .flash.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flash.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .card { background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 24px; }
+        .navbar { background: #fff; border-bottom: 1px solid #e8e8e8; padding: 12px 0; }
+        .navbar .container { display: flex; gap: 12px; align-items: center; }
+        .auth-page { display: flex; justify-content: center; align-items: center; min-height: 80vh; }
+        .auth-card { background: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); width: 100%; max-width: 400px; }
+        .auth-card h2 { margin-bottom: 24px; text-align: center; font-size: 1.6rem; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-size: 0.9rem; color: #555; }
+        .form-group input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.95rem; }
+        .form-group input:focus { outline: none; border-color: #4a4ae0; box-shadow: 0 0 0 3px rgba(74,74,224,0.1); }
+        .auth-card .btn { width: 100%; padding: 12px; font-size: 1rem; }
+        .auth-card p { text-align: center; margin-top: 16px; font-size: 0.9rem; color: #666; }
+        .auth-card p a { color: #4a4ae0; text-decoration: none; }
+        .storage-bar { background: #e8e8e8; border-radius: 4px; height: 6px; margin: 8px 0; overflow: hidden; }
+        .storage-bar-fill { background: #4a4ae0; height: 100%; border-radius: 4px; transition: width 0.3s; }
+        .storage-bar-fill.warning { background: #f39c12; }
+        .storage-bar-fill.danger { background: #e74c3c; }
+        .file-list { width: 100%; border-collapse: collapse; }
+        .file-list th { text-align: left; padding: 12px 16px; font-size: 0.85rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #eee; }
+        .file-list td { padding: 10px 16px; border-bottom: 1px solid #f5f5f5; font-size: 0.9rem; }
+        .file-list tr:hover { background: #f8f9ff; }
+        .file-list .name-col { display: flex; align-items: center; gap: 10px; }
+        .file-list .name-col .icon { font-size: 1.3rem; width: 28px; text-align: center; }
+        .file-list .name-col a { color: #1a1a2e; text-decoration: none; }
+        .file-list .name-col a:hover { color: #4a4ae0; }
+        .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+        .dropzone { border: 2px dashed #ccc; border-radius: 10px; padding: 40px; text-align: center; margin-bottom: 20px; transition: all 0.3s; cursor: pointer; }
+        .dropzone:hover, .dropzone.dragover { border-color: #4a4ae0; background: #f8f9ff; }
+        .dropzone p { color: #888; font-size: 0.95rem; }
+        .dropzone .icon { font-size: 2.5rem; margin-bottom: 8px; }
+        .checkbox-col { width: 40px; }
+        .actions-col { width: 100px; text-align: right; }
+        .actions-col a, .actions-col button { color: #888; text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+        .actions-col a:hover, .actions-col button:hover { background: #f0f0f0; color: #333; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; justify-content: center; align-items: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: #fff; padding: 24px; border-radius: 12px; width: 100%; max-width: 450px; }
+        .modal-content h3 { margin-bottom: 16px; }
+        .upload-progress { margin-top: 12px; display: none; }
+        .upload-progress.active { display: block; }
+        .progress-track { background: #eee; height: 6px; border-radius: 3px; overflow: hidden; }
+        .progress-fill { background: #4a4ae0; height: 100%; width: 0%; transition: width 0.3s; }
+        .share-link-input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; margin: 8px 0; }
+        .btn-icon { background: none; border: none; cursor: pointer; padding: 4px 8px; font-size: 1rem; color: #888; border-radius: 4px; }
+        .btn-icon:hover { background: #f0f0f0; color: #333; }
+        .empty-state { text-align: center; padding: 60px 20px; color: #888; }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+        #deleteBtn { display: none; }
+        #deleteBtn.visible { display: inline-block; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1><a href="{{ url_for('dashboard') }}">Cloud Storage</a></h1>
+            <div class="user-info">
+                {% if current_user.is_authenticated %}
+                    <span>{{ current_user.username }}</span>
+                    <a href="{{ url_for('family_page') }}">Family Tracker</a>
+                    <a href="{{ url_for('logout') }}">Logout</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}">Login</a>
+                    <a href="{{ url_for('register') }}">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
