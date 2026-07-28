@@ -180,14 +180,23 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username', '').strip()
+            password = data.get('password', '')
+        else:
+            username = request.form['username'].strip()
+            password = request.form['password']
         conn = get_db()
         user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
         conn.close()
         if user and check_password_hash(user['password_hash'], password):
             login_user(User(user['id'], user['username'], user['storage_quota']))
+            if request.is_json:
+                return jsonify({'status': 'ok'})
             return redirect(url_for('dashboard'))
+        if request.is_json:
+            return jsonify({'error': 'Invalid credentials'}), 401
         flash('Invalid username or password', 'error')
     return render_template('login.html')
 
@@ -195,18 +204,29 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password']
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username', '').strip()
+            password = data.get('password', '')
+        else:
+            username = request.form['username'].strip()
+            password = request.form['password']
         if len(username) < 3:
+            if request.is_json:
+                return jsonify({'error': 'Username must be at least 3 characters'}), 400
             flash('Username must be at least 3 characters', 'error')
             return render_template('register.html')
         if len(password) < 6:
+            if request.is_json:
+                return jsonify({'error': 'Password must be at least 6 characters'}), 400
             flash('Password must be at least 6 characters', 'error')
             return render_template('register.html')
         conn = get_db()
         existing = conn.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
         if existing:
             conn.close()
+            if request.is_json:
+                return jsonify({'error': 'Username already exists'}), 400
             flash('Username already exists', 'error')
             return render_template('register.html')
         conn.execute(
@@ -215,6 +235,8 @@ def register():
         )
         conn.commit()
         conn.close()
+        if request.is_json:
+            return jsonify({'status': 'ok'})
         flash('Registration successful! Please log in.', 'success')
         return redirect(url_for('login'))
     return render_template('register.html')
