@@ -74,14 +74,14 @@ function startBrowserGPS() {
         myMarker.bindTooltip('You', {direction: 'top', offset: [0, -20]});
 
         myCircle = L.circle([lat, lng], {
-            radius: acc || 50,
+            radius: Math.min(acc || 20, 20),
             color: '#3498db',
             fillColor: '#3498db',
             fillOpacity: 0.08,
             weight: 1
         }).addTo(map);
 
-        map.setView([lat, lng], map.getZoom() < 13 ? 13 : map.getZoom());
+        map.setView([lat, lng], map.getZoom() < 16 ? 16 : map.getZoom());
 
         fetch('/api/location', {
             method: 'POST',
