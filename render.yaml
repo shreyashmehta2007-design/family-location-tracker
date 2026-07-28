@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: family-tracker
+    env: python
+    buildCommand: pip install -r cloud-server/requirements.txt
+    startCommand: cd cloud-server && gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0
