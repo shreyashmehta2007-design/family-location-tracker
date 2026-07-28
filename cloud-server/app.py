@@ -126,6 +126,36 @@ def init_db():
 init_db()
 
 
+def migrate_tables():
+    conn = get_db()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS location_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            accuracy REAL DEFAULT 0,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            message TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+migrate_tables()
+
+
 class User(UserMixin):
     def __init__(self, id, username, storage_quota):
         self.id = id
@@ -181,15 +211,20 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        data = request.get_json(force=True, silent=True)
-        if data and isinstance(data, dict) and 'username' in data:
+        raw = request.get_data()
+        using_json = False
+        if raw:
+            try:
+                data = json.loads(raw.decode('utf-8'))
+                using_json = True
+            except Exception:
+                data = {}
+        if using_json:
             username = data.get('username', '').strip()
             password = data.get('password', '')
-            using_json = True
         else:
             username = request.form.get('username', '').strip()
             password = request.form.get('password', '')
-            using_json = False
         conn = get_db()
         user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
         conn.close()
@@ -748,13 +783,94 @@ def report_location():
     except (TypeError, ValueError, KeyError):
         return jsonify({'error': 'Invalid location data'}), 400
     conn = get_db()
+    prev = conn.execute(
+        'SELECT latitude, longitude, timestamp FROM locations WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1',
+        (current_user.id,)
+    ).fetchone()
     conn.execute(
         'INSERT INTO locations (user_id, latitude, longitude, accuracy) VALUES (?, ?, ?, ?)',
         (current_user.id, lat, lng, acc)
     )
+    conn.execute(
+        'INSERT INTO location_history (user_id, latitude, longitude, accuracy) VALUES (?, ?, ?, ?)',
+        (current_user.id, lat, lng, acc)
+    )
     conn.commit()
+    if prev:
+        prev_time = datetime.strptime(prev['timestamp'], '%Y-%m-%d %H:%M:%S')
+        now = datetime.now()
+        time_diff = (now - prev_time).total_seconds()
+        if time_diff > 0:
+            dist = haversine(prev['latitude'], prev['longitude'], lat, lng)
+            speed = dist / time_diff
+            if speed > 25:
+                member = conn.execute(
+                    'SELECT family_id FROM family_members WHERE user_id = ?',
+                    (current_user.id,)
+                ).fetchone()
+                if member:
+                    conn.execute(
+                        'INSERT INTO events (family_id, user_id, event_type, message) VALUES (?, ?, ?, ?)',
+                        (member['family_id'], current_user.id, 'speed',
+                         f"{current_user.username} is driving fast ({speed * 3.6:.0f} km/h)")
+                    )
+                    conn.commit()
     conn.close()
     check_geofences(current_user.id, lat, lng)
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/location/history', methods=['GET', 'POST'])
+@login_required
+def get_location_history():
+    if request.method == 'POST':
+        data = request.json or {}
+        user_id = data.get('user_id', current_user.id)
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+    else:
+        user_id = request.args.get('user_id', current_user.id)
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        hours = request.args.get('hours')
+        if hours:
+            start_time = (datetime.now() - timedelta(hours=int(hours))).strftime('%Y-%m-%d %H:%M:%S')
+            end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        user_id = current_user.id
+    if not start_time:
+        start_time = (datetime.now() - timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
+    if not end_time:
+        end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db()
+    rows = conn.execute(
+        'SELECT * FROM location_history WHERE user_id = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC',
+        (user_id, start_time, end_time)
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route('/api/sos', methods=['POST'])
+@login_required
+def send_sos():
+    data = request.json or {}
+    lat = data.get('latitude', 0)
+    lng = data.get('longitude', 0)
+    conn = get_db()
+    member = conn.execute('SELECT family_id FROM family_members WHERE user_id = ?', (current_user.id,)).fetchone()
+    if not member:
+        conn.close()
+        return jsonify({'error': 'Not in a family'}), 400
+    conn.execute(
+        'INSERT INTO events (family_id, user_id, event_type, message) VALUES (?, ?, ?, ?)',
+        (member['family_id'], current_user.id, 'sos',
+         f"🚨 SOS alert from {current_user.username} at {lat},{lng}")
+    )
+    conn.commit()
+    conn.close()
     return jsonify({'status': 'ok'})
 
 
@@ -807,15 +923,21 @@ def get_events():
     if not member:
         conn.close()
         return jsonify({'events': []})
-    events = conn.execute(
+    geofence_events = conn.execute(
         '''SELECT e.*, p.name as place_name FROM geofence_events e
            JOIN places p ON p.id = e.place_id
            WHERE p.family_id = ?
            ORDER BY e.created_at DESC LIMIT 50''',
         (member['family_id'],)
     ).fetchall()
+    system_events = conn.execute(
+        'SELECT id, user_id, event_type, message, created_at FROM events WHERE family_id = ? ORDER BY created_at DESC LIMIT 50',
+        (member['family_id'],)
+    ).fetchall()
+    all_events = [dict(e) for e in geofence_events] + [dict(e) for e in system_events]
+    all_events.sort(key=lambda e: e['created_at'], reverse=True)
     conn.close()
-    return jsonify({'events': [dict(e) for e in events]})
+    return jsonify({'events': all_events[:50]})
 
 
 @app.route('/track')

@@ -32,5 +32,9 @@ class LocationData {
     );
   }
 
+  static List<LocationData> fromJsonList(List<dynamic> jsonList) {
+    return jsonList.map((j) => LocationData.fromJson(j as Map<String, dynamic>)).toList();
+  }
+
   String get displayName => nickname ?? username;
 }

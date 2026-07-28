@@ -126,4 +126,15 @@ class ApiService {
       return {'inFamily': false, 'members': []};
     }
   }
+
+  static Future<List<dynamic>> getLocationHistory({int? hours}) async {
+    String path = '/api/location/history';
+    if (hours != null) path += '?hours=$hours';
+    final resp = await _request('GET', path);
+    return jsonDecode(resp.body) as List;
+  }
+
+  static Future<void> sendSos(double lat, double lng) async {
+    await _request('POST', '/api/sos', body: {'latitude': lat, 'longitude': lng});
+  }
 }

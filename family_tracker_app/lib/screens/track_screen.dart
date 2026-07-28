@@ -1,7 +1,6 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import '../services/api_service.dart';
+import '../services/location_service.dart';
 
 class TrackScreen extends StatefulWidget {
   const TrackScreen({super.key});
@@ -11,63 +10,50 @@ class TrackScreen extends StatefulWidget {
 }
 
 class _TrackScreenState extends State<TrackScreen> {
-  Position? _position;
   int _sentCount = 0;
   bool _isTracking = false;
-  StreamSubscription<Position>? _sub;
-  String _status = 'Tap Start to begin tracking';
+  bool _batterySaver = false;
 
   @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
+  void initState() {
+    super.initState();
   }
 
-  Future<void> _start() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      _setStatus('Please enable location services');
-      return;
-    }
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        _setStatus('Location permission denied');
+  void _toggle() async {
+    if (_isTracking) {
+      LocationService.stopTracking();
+      setState(() => _isTracking = false);
+    } else {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _showSnack('Please enable location services');
         return;
       }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _showSnack('Location permission denied');
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        _showSnack('Location permission permanently denied');
+        return;
+      }
+      await LocationService.startTracking();
+      setState(() => _isTracking = true);
+      _showSnack('Tracking active');
     }
-    if (permission == LocationPermission.deniedForever) {
-      _setStatus('Location permission permanently denied');
-      return;
-    }
-    setState(() => _isTracking = true);
-    _sub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10),
-    ).listen((pos) {
-      setState(() => _position = pos);
-      _sendLocation(pos.latitude, pos.longitude, pos.accuracy);
-    });
-    _setStatus('Tracking active');
   }
 
-  void _stop() {
-    _sub?.cancel();
-    setState(() => _isTracking = false);
-    _setStatus('Tracking stopped');
+  void _showSnack(String msg) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
-
-  Future<void> _sendLocation(double lat, double lng, double acc) async {
-    try {
-      await ApiService.reportLocation(lat, lng, acc);
-      setState(() => _sentCount++);
-    } catch (_) {}
-  }
-
-  void _setStatus(String msg) => setState(() => _status = msg);
 
   @override
   Widget build(BuildContext context) {
+    final pos = LocationService.lastPosition;
     return Scaffold(
       backgroundColor: const Color(0xFFf0f2f5),
       appBar: AppBar(
@@ -91,30 +77,45 @@ class _TrackScreenState extends State<TrackScreen> {
                 child: Icon(_isTracking ? Icons.my_location : Icons.location_off, size: 50, color: _isTracking ? const Color(0xFF27ae60) : Colors.grey),
               ),
               const SizedBox(height: 24),
-              Text(_status, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: _isTracking ? const Color(0xFF27ae60) : Colors.grey)),
+              Text(
+                _isTracking ? 'Tracking active' : 'Tap Start to begin tracking',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: _isTracking ? const Color(0xFF27ae60) : Colors.grey),
+              ),
               const SizedBox(height: 32),
-              if (_position != null) ...[
+              if (pos != null)
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)]),
                   child: Column(
                     children: [
-                      _infoRow('Latitude', _position!.latitude.toStringAsFixed(6)),
+                      _infoRow('Latitude', pos.latitude.toStringAsFixed(6)),
                       const SizedBox(height: 8),
-                      _infoRow('Longitude', _position!.longitude.toStringAsFixed(6)),
+                      _infoRow('Longitude', pos.longitude.toStringAsFixed(6)),
                       const SizedBox(height: 8),
-                      _infoRow('Accuracy', '${_position!.accuracy.toStringAsFixed(0)}m'),
-                      const SizedBox(height: 8),
-                      _infoRow('Updates Sent', '$_sentCount'),
+                      _infoRow('Accuracy', '${pos.accuracy.toStringAsFixed(0)}m'),
                     ],
                   ),
                 ),
-              ],
-              const SizedBox(height: 32),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('Battery Saver'),
+                  const SizedBox(width: 8),
+                  Switch(
+                    value: _batterySaver,
+                    onChanged: (v) {
+                      LocationService.setBatterySaver(v);
+                      setState(() => _batterySaver = v);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity, height: 50,
                 child: ElevatedButton.icon(
-                  onPressed: _isTracking ? _stop : _start,
+                  onPressed: _toggle,
                   icon: Icon(_isTracking ? Icons.stop : Icons.play_arrow),
                   label: Text(_isTracking ? 'Stop Tracking' : 'Start Tracking', style: const TextStyle(fontSize: 16)),
                   style: ElevatedButton.styleFrom(

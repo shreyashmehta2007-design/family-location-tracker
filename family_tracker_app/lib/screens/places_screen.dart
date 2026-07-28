@@ -74,7 +74,11 @@ class _PlacesScreenState extends State<PlacesScreen> {
                   onTap: (tapPos, latlng) => setState(() => _selectedPos = latlng),
                 ),
                 children: [
-                  TileLayer(urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
+                  TileLayer(
+                    urlTemplate: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+                    userAgentPackageName: 'com.familytracker.app',
+                    subdomains: const ['a', 'b', 'c'],
+                  ),
                   if (_places.isNotEmpty)
                     CircleLayer(
                       circles: _places.map((p) => CircleMarker(

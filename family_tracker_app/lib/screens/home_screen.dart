@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/location_service.dart';
 import 'login_screen.dart';
 import 'dashboard_screen.dart';
 import 'family_setup_screen.dart';
@@ -25,13 +26,23 @@ class _HomeScreenState extends State<HomeScreen> {
     _checkFamily();
   }
 
+  @override
+  void dispose() {
+    LocationService.stopTracking();
+    super.dispose();
+  }
+
   Future<void> _checkFamily() async {
     final data = await ApiService.checkFamily();
     if (!mounted) return;
+    final inFamily = data['inFamily'] ?? false;
     setState(() {
-      _inFamily = data['inFamily'] ?? false;
+      _inFamily = inFamily;
       _checking = false;
     });
+    if (inFamily) {
+      LocationService.startTracking();
+    }
   }
 
   @override
@@ -50,6 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(
               icon: const Icon(Icons.logout),
               onPressed: () async {
+                LocationService.stopTracking();
                 await AuthService.clearToken();
                 if (!context.mounted) return;
                 Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
@@ -103,6 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
           automaticallyImplyLeading: false,
           actions: [
             IconButton(icon: const Icon(Icons.logout), onPressed: () async {
+              LocationService.stopTracking();
               await AuthService.clearToken();
               if (!context.mounted) return;
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
