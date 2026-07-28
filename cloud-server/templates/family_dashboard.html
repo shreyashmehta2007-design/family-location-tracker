@@ -38,6 +38,8 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 let map, memberMarkers = {}, placeCircles = [], refreshInterval;
+let myMarker, myCircle, myPos = null;
+let gpsWatchId = null;
 
 function initMap() {
     map = L.map('map').setView([20, 78], 5);
@@ -47,6 +49,52 @@ function initMap() {
     }).addTo(map);
     loadData();
     refreshInterval = setInterval(loadData, 15000);
+    startBrowserGPS();
+}
+
+function startBrowserGPS() {
+    if (!navigator.geolocation) return;
+    gpsWatchId = navigator.geolocation.watchPosition(pos => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const acc = pos.coords.accuracy;
+        myPos = {lat, lng, acc};
+
+        const myIcon = L.divIcon({
+            html: `<div style="background:#3498db;color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">Y</div>`,
+            className: '',
+            iconSize: [36, 36],
+            iconAnchor: [18, 18]
+        });
+
+        if (myMarker) map.removeLayer(myMarker);
+        if (myCircle) map.removeLayer(myCircle);
+
+        myMarker = L.marker([lat, lng], {icon: myIcon, zIndexOffset: 100}).addTo(map);
+        myMarker.bindTooltip('You', {direction: 'top', offset: [0, -20]});
+
+        myCircle = L.circle([lat, lng], {
+            radius: acc || 50,
+            color: '#3498db',
+            fillColor: '#3498db',
+            fillOpacity: 0.08,
+            weight: 1
+        }).addTo(map);
+
+        map.setView([lat, lng], map.getZoom() < 13 ? 13 : map.getZoom());
+
+        fetch('/api/location', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({latitude: lat, longitude: lng, accuracy: acc})
+        }).catch(() => {});
+    }, err => {
+        console.warn('GPS error:', err.message);
+    }, {
+        enableHighAccuracy: true,
+        maximumAge: 30000,
+        timeout: 10000
+    });
 }
 
 async function loadData() {
@@ -71,6 +119,7 @@ async function loadLocations() {
 
     let html = '';
     for (const loc of data.locations) {
+        if (myPos && haversine(loc.latitude, loc.longitude, myPos.lat, myPos.lng) < 10) continue;
         const name = loc.nickname || loc.username;
         const color = loc.online ? '#27ae60' : '#888';
         const status = loc.online ? '🟢 Online' : '⚪ Offline';
@@ -143,7 +192,18 @@ async function loadEvents() {
 }
 
 document.addEventListener('DOMContentLoaded', initMap);
-window.addEventListener('beforeunload', function() { clearInterval(refreshInterval); });
+window.addEventListener('beforeunload', function() {
+    clearInterval(refreshInterval);
+    if (gpsWatchId) navigator.geolocation.clearWatch(gpsWatchId);
+});
+
+function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
 </script>
 <style>
 .place-label { background: #e74c3c !important; color: #fff !important; border: none !important; font-size: 13px !important; font-weight: 600 !important; padding: 4px 10px !important; white-space: nowrap; }
