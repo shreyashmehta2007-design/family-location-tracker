@@ -88,13 +88,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadData() async {
     try {
+      final livePos = LocationService.lastPosition;
+      if (livePos != null && mounted) {
+        setState(() => _myPosition = livePos);
+        _fetchAddress(livePos.latitude, livePos.longitude);
+      }
       final locs = await ApiService.getFamilyLocations();
       final plcs = await ApiService.getPlaces();
       final evts = await ApiService.getEvents();
       final history = await ApiService.getLocationHistory(hours: 1);
       if (!mounted) return;
       setState(() {
-        _locations = locs.map((l) => LocationData.fromJson(l)).toList();
+        _locations = locs
+          .map((l) => LocationData.fromJson(l))
+          .where((l) => _myPosition == null ||
+            _haversine(l.latitude, l.longitude, _myPosition!.latitude, _myPosition!.longitude) > 1)
+          .toList();
         _places = plcs.map((p) => PlaceModel.fromJson(p)).toList();
         _events = evts.map((e) => EventModel.fromJson(e)).toList();
         _historyPoints = history.cast<Map<String, dynamic>>();
@@ -146,12 +155,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             IconButton(icon: const Icon(Icons.gps_fixed), onPressed: () => _mapCtrl.move(LatLng(_myPosition!.latitude, _myPosition!.longitude), 15)),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: _showSosConfirmation,
         backgroundColor: Colors.red,
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.warning),
-        label: const Text('SOS'),
+        child: const Icon(Icons.warning),
       ),
       body: _loading && _locations.isEmpty
           ? const Center(child: CircularProgressIndicator())
@@ -308,4 +316,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
     );
   }
+
+  static double _haversine(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371000;
+    final dLat = _toRad(lat2 - lat1);
+    final dLon = _toRad(lon2 - lon1);
+    final sinLat = (dLat / 2).sin();
+    final sinLon = (dLon / 2).sin();
+    final a = sinLat * sinLat + _toRad(lat1).cos() * _toRad(lat2).cos() * sinLon * sinLon;
+    return r * 2 * (a.sqrt()).atan2((1 - a).sqrt());
+  }
+
+  static double _toRad(double deg) => deg * 3.141592653589793 / 180;
 }

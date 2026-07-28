@@ -10,7 +10,6 @@ class TrackScreen extends StatefulWidget {
 }
 
 class _TrackScreenState extends State<TrackScreen> {
-  int _sentCount = 0;
   bool _isTracking = false;
   bool _batterySaver = false;
 
@@ -61,12 +60,13 @@ class _TrackScreenState extends State<TrackScreen> {
         backgroundColor: const Color(0xFF1a1a2e),
         foregroundColor: Colors.white,
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+      body: SingleChildScrollView(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
               Container(
                 width: 120, height: 120,
                 decoration: BoxDecoration(
@@ -128,6 +128,7 @@ class _TrackScreenState extends State<TrackScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
