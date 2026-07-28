@@ -181,20 +181,15 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        using_json = False
-        raw = request.get_data(as_text=True)
-        if raw and raw.startswith('{'):
-            try:
-                data = json.loads(raw)
-                using_json = True
-            except Exception:
-                data = {}
-        if using_json:
+        data = request.get_json(force=True, silent=True)
+        if data and isinstance(data, dict) and 'username' in data:
             username = data.get('username', '').strip()
             password = data.get('password', '')
+            using_json = True
         else:
             username = request.form.get('username', '').strip()
             password = request.form.get('password', '')
+            using_json = False
         conn = get_db()
         user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
         conn.close()
@@ -212,20 +207,15 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        using_json = False
-        raw = request.get_data(as_text=True)
-        if raw and raw.startswith('{'):
-            try:
-                data = json.loads(raw)
-                using_json = True
-            except Exception:
-                data = {}
-        if using_json:
+        data = request.get_json(force=True, silent=True)
+        if data and isinstance(data, dict) and 'username' in data:
             username = data.get('username', '').strip()
             password = data.get('password', '')
+            using_json = True
         else:
             username = request.form.get('username', '').strip()
             password = request.form.get('password', '')
+            using_json = False
         if len(username) < 3:
             if using_json:
                 return jsonify({'error': 'Username must be at least 3 characters'}), 400
