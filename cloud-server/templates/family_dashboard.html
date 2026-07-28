@@ -54,11 +54,32 @@ function initMap() {
 
 function startBrowserGPS() {
     if (!navigator.geolocation) return;
+
+    // Try one-time high accuracy fix first
+    navigator.geolocation.getCurrentPosition(pos => {
+        updateMyPosition(pos);
+    }, () => {}, {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0
+    });
+
     gpsWatchId = navigator.geolocation.watchPosition(pos => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const acc = pos.coords.accuracy;
-        myPos = {lat, lng, acc};
+        updateMyPosition(pos);
+    }, err => {
+        console.warn('GPS error:', err.message);
+    }, {
+        enableHighAccuracy: true,
+        maximumAge: 5000,
+        timeout: 15000
+    });
+}
+
+function updateMyPosition(pos) {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const acc = pos.coords.accuracy;
+    myPos = {lat, lng, acc};
 
         const myIcon = L.divIcon({
             html: `<div style="background:#3498db;color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">Y</div>`,
@@ -71,10 +92,10 @@ function startBrowserGPS() {
         if (myCircle) map.removeLayer(myCircle);
 
         myMarker = L.marker([lat, lng], {icon: myIcon, zIndexOffset: 100}).addTo(map);
-        myMarker.bindTooltip('You', {direction: 'top', offset: [0, -20]});
+        myMarker.bindTooltip('You (${acc.toFixed(0)}m accuracy)', {direction: 'top', offset: [0, -20]});
 
         myCircle = L.circle([lat, lng], {
-            radius: Math.min(acc || 20, 20),
+            radius: Math.min(acc || 20, 30),
             color: '#3498db',
             fillColor: '#3498db',
             fillOpacity: 0.08,
