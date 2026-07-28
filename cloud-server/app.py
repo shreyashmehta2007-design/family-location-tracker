@@ -887,6 +887,8 @@ def get_family_locations():
     ).fetchall()
     results = []
     for m in members:
+        if m['user_id'] == current_user.id:
+            continue
         loc = conn.execute(
             'SELECT latitude, longitude, accuracy, timestamp FROM locations WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1',
             (m['user_id'],)
